@@ -1,7 +1,8 @@
 {
   "expo": {
     "name": "SleepSense-mobile-app",
-    "slug": "SleepSense-mobile-app",
+    "slug": "sleepsense-mobile-app",
+    "scheme": "sleepsense",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -10,6 +11,7 @@
       "supportsTablet": true
     },
     "android": {
+      "package": "com.manushau.sleepsense",
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/android-icon-foreground.png",
@@ -19,6 +21,16 @@
     },
     "web": {
       "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      "expo-secure-store",
+      "expo-sqlite",
+      "expo-web-browser"
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "5bbc8198-9570-4966-a307-ba005f9ec039"
+      }
     }
   }
 }
