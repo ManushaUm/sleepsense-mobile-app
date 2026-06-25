@@ -8,10 +8,17 @@
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSMotionUsageDescription": "SleepSense uses movement data to fine-tune your nightly sleep quality predictions."
+      }
     },
     "android": {
       "package": "com.manushau.sleepsense",
+      "permissions": [
+        "android.permission.ACTIVITY_RECOGNITION",
+        "android.permission.PACKAGE_USAGE_STATS"
+      ],
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/android-icon-foreground.png",

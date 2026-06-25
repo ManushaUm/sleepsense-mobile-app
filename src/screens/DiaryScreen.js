@@ -15,6 +15,10 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import client from '../api/client';
 import { COLORS } from '../theme/colors';
 import { saveLastLoggedDiaryDate, getTelemetryData } from '../database/storage';
+import { getTomorrowCalendarEvents } from '../sensors/CalendarManager';
+import { getDailyScreenTimeMinutes } from '../sensors/ScreenTimeManager';
+import { getWalkingMinutesToday } from '../sensors/ActivityManager';
+import { scheduleBedtimeAlerts } from '../sensors/NotificationScheduler';
 
 export default function DiaryScreen({ userId, navigation }) {
   const [loading, setLoading] = useState(false);
@@ -62,10 +66,15 @@ export default function DiaryScreen({ userId, navigation }) {
       const dd = String(today.getDate()).padStart(2, '0');
       const dateStr = `${yyyy}-${mm}-${dd}`;
 
+      // 1. Gather all active sensor data
       const telemetry = await getTelemetryData();
+      const walkingMinutes = await getWalkingMinutesToday();
+      const screenStats = await getDailyScreenTimeMinutes();
+      const calendarEvents = await getTomorrowCalendarEvents();
+
       const totalUnlocks = telemetry.unlock_count_daytime + telemetry.unlock_count_evening + telemetry.unlock_count_late_night;
 
-      // Assemble full 42-feature payload with default sensor values
+      // Assemble full 42-feature payload with active sensor values
       // merged with dynamic subjective user inputs
       const payload = {
         // Subjective inputs
@@ -76,7 +85,7 @@ export default function DiaryScreen({ userId, navigation }) {
         study_hours_today: parseFloat(studyHours) || 0.0,
         exercise_self_report: exercised ? 1 : 0,
         
-        // Passive Telemetry (sensible mock defaults, replaced by BackgroundETL sensor logs)
+        // Passive Telemetry (fetched from hardware sensors and calendar API)
         unlock_count_daytime: parseFloat(telemetry.unlock_count_daytime),
         unlock_count_evening: parseFloat(telemetry.unlock_count_evening),
         unlock_count_late_night: parseFloat(telemetry.unlock_count_late_night),
@@ -86,16 +95,16 @@ export default function DiaryScreen({ userId, navigation }) {
         screen_sessions_count: parseFloat(totalUnlocks),
         
         stationary_ratio: 0.82,
-        walking_minutes: exercised ? 40.0 : 15.0,
+        walking_minutes: parseFloat(walkingMinutes),
         running_minutes: exercised ? 15.0 : 0.0,
         exercise_detected: exercised ? 1 : 0,
         peak_activity_hour: 17.5,
         activity_bout_count: 8.0,
         
-        app_social_min: 45.0,
-        app_entertainment_evening_min: 30.0,
-        app_late_night_min: 15.0,
-        last_active_app_hour: 23.5,
+        app_social_min: parseFloat(screenStats.app_social_min),
+        app_entertainment_evening_min: parseFloat(screenStats.app_entertainment_evening_min),
+        app_late_night_min: parseFloat(screenStats.app_late_night_min),
+        last_active_app_hour: parseFloat(screenStats.last_active_app_hour),
         app_diversity_count: 8.0,
         app_study_sessions: 3.0,
         
@@ -121,6 +130,8 @@ export default function DiaryScreen({ userId, navigation }) {
         nlp_caffeine_similarity: diaryNotes.toLowerCase().includes('caffeine') || diaryNotes.toLowerCase().includes('coffee') ? 0.85 : 0.05,
         nlp_screen_similarity: diaryNotes.toLowerCase().includes('phone') || diaryNotes.toLowerCase().includes('screen') ? 0.75 : 0.05,
         nlp_stress_similarity: diaryNotes.toLowerCase().includes('exam') || diaryNotes.toLowerCase().includes('stress') || diaryNotes.toLowerCase().includes('work') ? 0.90 : 0.05,
+        
+        calendar_events: calendarEvents
       };
 
       // POST user features and trigger prediction
@@ -128,6 +139,11 @@ export default function DiaryScreen({ userId, navigation }) {
 
       // Save diary logging date locally
       await saveLastLoggedDiaryDate(dateStr);
+
+      // Schedule dynamic sleep/stress/debt alerts tonight
+      if (response.data) {
+        await scheduleBedtimeAlerts(response.data, calendarEvents);
+      }
 
       const percentageScore = Math.round((response.data.predicted_score / 3.0) * 100);
       let friendlyLabel = 'No Sleep Data 💤';

@@ -9,12 +9,17 @@ import {
   Alert,
   StatusBar,
   Image,
+  RefreshControl,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import client from '../api/client';
 import Gauge from '../components/Gauge';
 import { COLORS } from '../theme/colors';
 import { getLastLoggedDiaryDate, getProfilePictureUrl, getTelemetryData } from '../database/storage';
+import { getTomorrowCalendarEvents } from '../sensors/CalendarManager';
+import { getDailyScreenTimeMinutes } from '../sensors/ScreenTimeManager';
+import { getWalkingMinutesToday } from '../sensors/ActivityManager';
+import { scheduleBedtimeAlerts } from '../sensors/NotificationScheduler';
 
 export default function HomeScreen({ userId, navigation }) {
   const [loading, setLoading] = useState(false);
@@ -34,6 +39,8 @@ export default function HomeScreen({ userId, navigation }) {
     return `${yyyy}-${mm}-${dd}`;
   });
 
+  const [refreshing, setRefreshing] = useState(false);
+
   const fetchLatestPrediction = async () => {
     setLoading(true);
     try {
@@ -46,9 +53,69 @@ export default function HomeScreen({ userId, navigation }) {
       }
     } catch (error) {
       console.error('Error fetching prediction history:', error);
-      // Don't show alert here so it fails silently at mount if server is offline
     } finally {
       setLoading(false);
+    }
+  };
+
+  const onRefresh = async () => {
+    setRefreshing(true);
+    try {
+      // 1. Gather all hardware & calendar events data
+      const telemetry = await getTelemetryData();
+      const walkingMinutes = await getWalkingMinutesToday();
+      const screenStats = await getDailyScreenTimeMinutes();
+      const calendarEvents = await getTomorrowCalendarEvents();
+
+      const totalUnlocks = telemetry.unlock_count_daytime + telemetry.unlock_count_evening + telemetry.unlock_count_late_night;
+      setLocalUnlocks(totalUnlocks);
+
+      // 2. Prepare payload of active sensors (matches schemas.DailyFeaturesInput)
+      const payload = {
+        unlock_count_daytime: parseFloat(telemetry.unlock_count_daytime),
+        unlock_count_evening: parseFloat(telemetry.unlock_count_evening),
+        unlock_count_late_night: parseFloat(telemetry.unlock_count_late_night),
+        first_unlock_hour: parseFloat(telemetry.first_unlock_hour),
+        last_unlock_hour: parseFloat(telemetry.last_unlock_hour),
+        screen_sessions_count: parseFloat(totalUnlocks),
+
+        walking_minutes: parseFloat(walkingMinutes),
+
+        app_social_min: parseFloat(screenStats.app_social_min),
+        app_entertainment_evening_min: parseFloat(screenStats.app_entertainment_evening_min),
+        app_late_night_min: parseFloat(screenStats.app_late_night_min),
+        last_active_app_hour: parseFloat(screenStats.last_active_app_hour),
+
+        calendar_events: calendarEvents
+      };
+
+      // 3. Post to predict endpoint (updates features & recalculates predictions)
+      const response = await client.post(`/predict/${userId}?date=${dateStr}`, payload);
+      setPrediction(response.data);
+
+      // 4. Schedule local wind-down/exam/sleep debt notifications
+      if (response.data) {
+        await scheduleBedtimeAlerts(response.data, calendarEvents);
+      }
+
+      const percentageScore = Math.round((response.data.predicted_score / 3.0) * 100);
+      let friendlyLabel = 'No Sleep Data 💤';
+      const clean = String(response.data.predicted_label).toLowerCase();
+      if (clean.includes('very good')) friendlyLabel = 'Excellent Sleep Expected 🌟';
+      else if (clean.includes('fairly good')) friendlyLabel = 'Good Rest Expected 👍';
+      else if (clean.includes('fairly bad')) friendlyLabel = 'Restless Sleep Expected ⚠️';
+      else if (clean.includes('very bad')) friendlyLabel = 'Poor Sleep Expected 😴';
+
+      Alert.alert(
+        'Sleep Prediction Updated',
+        `Based on today's lifestyle habits, your sleep quality score is estimated at ${percentageScore}%.\n\nExpected tonight: ${friendlyLabel}`
+      );
+    } catch (error) {
+      console.error('Error refreshing sleep predictions:', error);
+      const detail = error.response?.data?.detail || 'Failed to update sleep predictions. Ensure the backend is running.';
+      Alert.alert('Sync Prediction Error', detail);
+    } finally {
+      setRefreshing(false);
     }
   };
 
@@ -77,38 +144,20 @@ export default function HomeScreen({ userId, navigation }) {
     loadTelemetry();
   }, [userId, dateStr]);
 
-  const handlePredict = async () => {
-    setLoading(true);
-    try {
-      // Trigger user prediction endpoint for this date
-      const response = await client.post(`/predict/${userId}?date=${dateStr}`);
-      setPrediction(response.data);
-
-      const percentageScore = Math.round((response.data.predicted_score / 3.0) * 100);
-      let friendlyLabel = 'No Sleep Data 💤';
-      const clean = String(response.data.predicted_label).toLowerCase();
-      if (clean.includes('very good')) friendlyLabel = 'Excellent Sleep Expected 🌟';
-      else if (clean.includes('fairly good')) friendlyLabel = 'Good Rest Expected 👍';
-      else if (clean.includes('fairly bad')) friendlyLabel = 'Restless Sleep Expected ⚠️';
-      else if (clean.includes('very bad')) friendlyLabel = 'Poor Sleep Expected 😴';
-
-      Alert.alert(
-        'Sleep Prediction Complete',
-        `Based on today's lifestyle habits, your sleep quality score is estimated at ${percentageScore}%.\n\nExpected tonight: ${friendlyLabel}`
-      );
-    } catch (error) {
-      console.error(error);
-      const detail = error.response?.data?.detail || 'Failed to predict sleep quality. Ensure backend is running and features are ingested.';
-      Alert.alert('Prediction Error', detail);
-    } finally {
-      setLoading(false);
-    }
-  };
-
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="light-content" />
-      <ScrollView contentContainerStyle={styles.scrollContainer}>
+      <ScrollView
+        contentContainerStyle={styles.scrollContainer}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor={COLORS.primaryLight}
+            colors={[COLORS.primary]}
+          />
+        }
+      >
         {/* Header */}
         <View style={styles.header}>
           <View style={styles.welcomeRow}>
@@ -126,9 +175,6 @@ export default function HomeScreen({ userId, navigation }) {
               <Text style={styles.dateText}>Date: {dateStr}</Text>
             </View>
           </View>
-          <TouchableOpacity style={styles.syncBtn} onPress={fetchLatestPrediction} disabled={loading}>
-            <Text style={styles.syncBtnText}>🔄 Refresh</Text>
-          </TouchableOpacity>
         </View>
 
         {loading && !prediction ? (
@@ -219,14 +265,7 @@ export default function HomeScreen({ userId, navigation }) {
               </View>
             </View>
 
-            {/* Quick action button */}
-            <TouchableOpacity style={styles.predictBtn} onPress={handlePredict} disabled={loading}>
-              {loading ? (
-                <ActivityIndicator color={COLORS.white} />
-              ) : (
-                <Text style={styles.predictBtnText}>Predict Sleep Score</Text>
-              )}
-            </TouchableOpacity>
+            {/* Predictions and advice are updated by dragging down to refresh */}
 
             {/* Advice summary preview */}
             {prediction?.advice && prediction.advice.length > 0 && (

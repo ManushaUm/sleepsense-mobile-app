@@ -10,7 +10,7 @@ import {
   Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { deleteToken, deleteUserId, getProfilePictureUrl, deleteProfilePictureUrl } from '../database/storage';
+import { deleteToken, deleteUserId, getProfilePictureUrl, deleteProfilePictureUrl, deleteGoogleAccessToken } from '../database/storage';
 import client, { getApiBaseUrl } from '../api/client';
 import { COLORS } from '../theme/colors';
 
@@ -59,6 +59,7 @@ export default function ProfileScreen({ userId, onLogout }) {
             await deleteToken();
             await deleteUserId();
             await deleteProfilePictureUrl();
+            await deleteGoogleAccessToken();
             onLogout();
           },
         },

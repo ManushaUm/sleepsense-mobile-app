@@ -201,5 +201,41 @@ export async function getTelemetryData() {
   }
 }
 
+const GOOGLE_ACCESS_TOKEN_KEY = 'sleepsense_google_access_token';
+
+export async function saveGoogleAccessToken(token) {
+  try {
+    if (token) {
+      await SecureStore.setItemAsync(GOOGLE_ACCESS_TOKEN_KEY, token);
+    } else {
+      await SecureStore.deleteItemAsync(GOOGLE_ACCESS_TOKEN_KEY);
+    }
+    return true;
+  } catch (error) {
+    console.error('Error saving Google access token:', error);
+    return false;
+  }
+}
+
+export async function getGoogleAccessToken() {
+  try {
+    return await SecureStore.getItemAsync(GOOGLE_ACCESS_TOKEN_KEY);
+  } catch (error) {
+    console.error('Error retrieving Google access token:', error);
+    return null;
+  }
+}
+
+export async function deleteGoogleAccessToken() {
+  try {
+    await SecureStore.deleteItemAsync(GOOGLE_ACCESS_TOKEN_KEY);
+    return true;
+  } catch (error) {
+    console.error('Error deleting Google access token:', error);
+    return false;
+  }
+}
+
+
 
 

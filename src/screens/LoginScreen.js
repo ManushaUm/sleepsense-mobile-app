@@ -14,8 +14,9 @@ import {
 } from 'react-native';
 import * as WebBrowser from 'expo-web-browser';
 import * as Google from 'expo-auth-session/providers/google';
+import { makeRedirectUri } from 'expo-auth-session';
 import client, { getApiBaseUrl, setApiBaseUrl } from '../api/client';
-import { saveToken, saveUserId, saveProfilePictureUrl } from '../database/storage';
+import { saveToken, saveUserId, saveProfilePictureUrl, saveGoogleAccessToken } from '../database/storage';
 import { COLORS } from '../theme/colors';
 
 // Complete auth sessions redirected from browser overlays
@@ -29,19 +30,41 @@ export default function LoginScreen({ onLoginSuccess }) {
   const [loading, setLoading] = useState(false);
   
   // Google Auth Sessions
-  const [request, response, promptAsync] = Google.useIdTokenAuthRequest({
+  // Configure dynamically to work in both Expo Go (dev) and Standalone APK (prod)
+  const authConfig = {
+    // Web Client ID (used for redirect proxy in Expo Go)
     clientId: '656306996421-8q1shbdao820ekjnhuodjuesmesl4fce.apps.googleusercontent.com',
-    redirectUri: 'https://auth.expo.io/@anonymous/sleepsense-mobile-app',
-  });
+    
+    // Android Client ID (used strictly in production / standalone APK builds)
+    androidClientId: __DEV__ ? undefined : '656306996421-3j4v0ba7k32s27dirrlh7eb214jt86jk.apps.googleusercontent.com',
+    
+    scopes: [
+      'openid',
+      'profile',
+      'email',
+      'https://www.googleapis.com/auth/calendar.events.readonly'
+    ],
+  };
+
+  // Only use custom scheme redirect in production standalone builds.
+  // In development (Expo Go), omitting it lets expo-auth-session use the Expo Proxy (auth.expo.io)
+  if (!__DEV__) {
+    authConfig.redirectUri = makeRedirectUri({
+      scheme: 'sleepsense',
+    });
+  }
+
+  const [request, response, promptAsync] = Google.useIdTokenAuthRequest(authConfig);
 
   useEffect(() => {
     if (response?.type === 'success') {
-      const { id_token } = response.params;
-      handleGoogleLogin(id_token);
+      const { id_token, access_token } = response.params;
+      const gAccessToken = access_token || response.authentication?.accessToken;
+      handleGoogleLogin(id_token, gAccessToken);
     }
   }, [response]);
 
-  const handleGoogleLogin = async (idToken) => {
+  const handleGoogleLogin = async (idToken, googleAccessToken) => {
     setLoading(true);
     try {
       const res = await client.post('/auth/google-login', {
@@ -52,6 +75,9 @@ export default function LoginScreen({ onLoginSuccess }) {
       await saveToken(access_token);
       await saveUserId(user_id);
       await saveProfilePictureUrl(profile_picture_url);
+      if (googleAccessToken) {
+        await saveGoogleAccessToken(googleAccessToken);
+      }
 
       onLoginSuccess(user_id);
     } catch (error) {
@@ -62,29 +88,7 @@ export default function LoginScreen({ onLoginSuccess }) {
       setLoading(false);
     }
   };
-  
-  // API URL settings modal
-  const [showSettings, setShowSettings] = useState(false);
-  const [apiUrl, setApiUrl] = useState('');
-
-  useEffect(() => {
-    async function loadSettings() {
-      const url = await getApiBaseUrl();
-      setApiUrl(url);
-    }
-    loadSettings();
-  }, []);
-
-  const handleSaveSettings = async () => {
-    const saved = await setApiBaseUrl(apiUrl);
-    if (saved) {
-      Alert.alert('Settings Saved', `Backend set to: ${saved}`);
-      setApiUrl(saved);
-      setShowSettings(false);
-    } else {
-      Alert.alert('Error', 'Failed to save base URL settings.');
-    }
-  };
+  // Settings configuration disabled for user access
 
   const handleAuth = async () => {
     if (!userId.trim() || !password.trim()) {
@@ -142,10 +146,6 @@ export default function LoginScreen({ onLoginSuccess }) {
       style={styles.container}
     >
       <ScrollView contentContainerStyle={styles.scrollContainer} keyboardShouldPersistTaps="handled">
-        {/* Settings button */}
-        <TouchableOpacity style={styles.settingsBtn} onPress={() => setShowSettings(true)}>
-          <Text style={styles.settingsBtnText}>⚙️ Server Settings</Text>
-        </TouchableOpacity>
 
         {/* Brand Header */}
         <View style={styles.header}>
@@ -233,44 +233,6 @@ export default function LoginScreen({ onLoginSuccess }) {
           </TouchableOpacity>
         </View>
 
-        {/* Dynamic Server Config Modal */}
-        <Modal
-          visible={showSettings}
-          animationType="fade"
-          transparent
-          onRequestClose={() => setShowSettings(false)}
-        >
-          <View style={styles.modalOverlay}>
-            <View style={styles.modalContent}>
-              <Text style={styles.modalTitle}>Server Configuration</Text>
-              <Text style={styles.modalLabel}>Backend Host URL:</Text>
-              <TextInput
-                style={styles.modalInput}
-                value={apiUrl}
-                onChangeText={setApiUrl}
-                placeholder="http://192.168.1.100:8000"
-                placeholderTextColor={COLORS.textSecondary}
-                autoCapitalize="none"
-                autoCorrect={false}
-              />
-              <Text style={styles.modalInfo}>
-                * Required for testing on physical devices. Enter your host computer's local IP address (e.g. 192.168.1.XX:8000).
-              </Text>
-              
-              <View style={styles.modalActions}>
-                <TouchableOpacity
-                  style={[styles.modalBtn, styles.cancelBtn]}
-                  onPress={() => setShowSettings(false)}
-                >
-                  <Text style={styles.modalBtnText}>Cancel</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={[styles.modalBtn, styles.saveBtn]} onPress={handleSaveSettings}>
-                  <Text style={styles.modalBtnText}>Save</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          </View>
-        </Modal>
       </ScrollView>
     </KeyboardAvoidingView>
   );

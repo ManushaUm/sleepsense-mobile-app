@@ -7,6 +7,7 @@ import {
   ActivityIndicator,
   TouchableOpacity,
   StatusBar,
+  RefreshControl,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import client from '../api/client';
@@ -14,11 +15,19 @@ import { COLORS } from '../theme/colors';
 
 export default function AdviceScreen({ userId }) {
   const [loading, setLoading] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [adviceList, setAdviceList] = useState([]);
   const [shapDrivers, setShapDrivers] = useState([]);
 
   const fetchAdviceAndDrivers = async () => {
-    setLoading(true);
+    if (refreshing) return;
+    
+    if (adviceList.length === 0) {
+      setLoading(true);
+    } else {
+      setRefreshing(true);
+    }
+
     try {
       // Get latest prediction history item to extract advice and SHAP drivers
       const response = await client.get(`/history/${userId}?limit=1`);
@@ -34,6 +43,7 @@ export default function AdviceScreen({ userId }) {
       console.error('Error fetching advice:', error);
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
   };
 
@@ -88,7 +98,17 @@ export default function AdviceScreen({ userId }) {
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="light-content" />
-      <ScrollView contentContainerStyle={styles.scrollContainer}>
+      <ScrollView
+        contentContainerStyle={styles.scrollContainer}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={fetchAdviceAndDrivers}
+            tintColor={COLORS.primaryLight}
+            colors={[COLORS.primary]}
+          />
+        }
+      >
         <Text style={styles.title}>Sleep Coach Insights</Text>
         <Text style={styles.subtitle}>
           Personalized habits analysis and recommendations to help you sleep better tonight.
@@ -197,9 +217,7 @@ export default function AdviceScreen({ userId }) {
               ))
             )}
 
-            <TouchableOpacity style={styles.refreshBtn} onPress={fetchAdviceAndDrivers}>
-              <Text style={styles.refreshBtnText}>Update Coaching Recommendations</Text>
-            </TouchableOpacity>
+            {/* Recommendations are updated by dragging down to refresh */}
           </>
         )}
       </ScrollView>
