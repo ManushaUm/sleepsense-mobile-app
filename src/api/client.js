@@ -1,6 +1,7 @@
 import axios from 'axios';
 import { getToken } from '../database/storage';
 import * as SecureStore from 'expo-secure-store';
+import { Platform } from 'react-native';
 
 const API_BASE_URL_KEY = 'sleepsense_api_base_url';
 // Default to standard localhost, but mobile devs should configure to machine's local network IP
@@ -17,7 +18,9 @@ client.interceptors.request.use(
   async (config) => {
     // Dynamic Base URL check for easy testing on real devices
     let baseUrl = await SecureStore.getItemAsync(API_BASE_URL_KEY);
-    if (!baseUrl) {
+    // Fall back to production Cloud Run URL if no base URL is stored,
+    // or if the stored URL contains 'localhost' or '127.0.0.1' on a native device (where it will never connect).
+    if (!baseUrl || (Platform.OS !== 'web' && (baseUrl.includes('localhost') || baseUrl.includes('127.0.0.1')))) {
       baseUrl = DEFAULT_BASE_URL;
     }
     config.baseURL = baseUrl;

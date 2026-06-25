@@ -32,7 +32,13 @@
     "plugins": [
       "expo-secure-store",
       "expo-sqlite",
-      "expo-web-browser"
+      "expo-web-browser",
+      [
+        "@react-native-google-signin/google-signin",
+        {
+          "iosUrlScheme": "com.googleusercontent.apps.656306996421-8q1shbdao820ekjnhuodjuesmesl4fce"
+        }
+      ]
     ],
     "extra": {
       "eas": {

@@ -12,15 +12,17 @@ import {
   ActivityIndicator,
   Modal,
 } from 'react-native';
-import * as WebBrowser from 'expo-web-browser';
-import * as Google from 'expo-auth-session/providers/google';
-import { makeRedirectUri } from 'expo-auth-session';
+import { GoogleSignin, statusCodes } from '@react-native-google-signin/google-signin';
 import client, { getApiBaseUrl, setApiBaseUrl } from '../api/client';
 import { saveToken, saveUserId, saveProfilePictureUrl, saveGoogleAccessToken } from '../database/storage';
 import { COLORS } from '../theme/colors';
 
-// Complete auth sessions redirected from browser overlays
-WebBrowser.maybeCompleteAuthSession();
+// Configure Native Google Sign-In
+GoogleSignin.configure({
+  webClientId: '656306996421-8q1shbdao820ekjnhuodjuesmesl4fce.apps.googleusercontent.com',
+  offlineAccess: true,
+  scopes: ['https://www.googleapis.com/auth/calendar.events.readonly'],
+});
 
 export default function LoginScreen({ onLoginSuccess }) {
   const [isRegister, setIsRegister] = useState(false);
@@ -29,40 +31,36 @@ export default function LoginScreen({ onLoginSuccess }) {
   const [psqiPre, setPsqiPre] = useState('5');
   const [loading, setLoading] = useState(false);
   
-  // Google Auth Sessions
-  // Configure dynamically to work in both Expo Go (dev) and Standalone APK (prod)
-  const authConfig = {
-    // Web Client ID (used for redirect proxy in Expo Go)
-    clientId: '656306996421-8q1shbdao820ekjnhuodjuesmesl4fce.apps.googleusercontent.com',
-    
-    // Android Client ID (used strictly in production / standalone APK builds)
-    androidClientId: __DEV__ ? undefined : '656306996421-3j4v0ba7k32s27dirrlh7eb214jt86jk.apps.googleusercontent.com',
-    
-    scopes: [
-      'openid',
-      'profile',
-      'email',
-      'https://www.googleapis.com/auth/calendar.events.readonly'
-    ],
-  };
-
-  // Only use custom scheme redirect in production standalone builds.
-  // In development (Expo Go), omitting it lets expo-auth-session use the Expo Proxy (auth.expo.io)
-  if (!__DEV__) {
-    authConfig.redirectUri = makeRedirectUri({
-      scheme: 'sleepsense',
-    });
-  }
-
-  const [request, response, promptAsync] = Google.useIdTokenAuthRequest(authConfig);
-
-  useEffect(() => {
-    if (response?.type === 'success') {
-      const { id_token, access_token } = response.params;
-      const gAccessToken = access_token || response.authentication?.accessToken;
-      handleGoogleLogin(id_token, gAccessToken);
+  const handleNativeGoogleSignIn = async () => {
+    setLoading(true);
+    try {
+      await GoogleSignin.hasPlayServices();
+      const response = await GoogleSignin.signIn();
+      const idToken = response.data?.idToken || response.idToken;
+      
+      const tokens = await GoogleSignin.getTokens();
+      const accessToken = tokens.accessToken;
+      
+      if (!idToken) {
+        throw new Error('Google Sign-In did not return an ID token.');
+      }
+      
+      await handleGoogleLogin(idToken, accessToken);
+    } catch (error) {
+      if (error.code === statusCodes.SIGN_IN_CANCELLED) {
+        Alert.alert('Sign-In Cancelled', 'Google sign-in was cancelled.');
+      } else if (error.code === statusCodes.IN_PROGRESS) {
+        Alert.alert('Sign-In in Progress', 'Google sign-in is already in progress.');
+      } else if (error.code === statusCodes.PLAY_SERVICES_NOT_AVAILABLE) {
+        Alert.alert('Play Services Error', 'Google Play Services are not available or outdated.');
+      } else {
+        console.error('Native Google Sign-In Error:', error);
+        Alert.alert('Google Sign-In Error', error.message || 'An unknown error occurred.');
+      }
+    } finally {
+      setLoading(false);
     }
-  }, [response]);
+  };
 
   const handleGoogleLogin = async (idToken, googleAccessToken) => {
     setLoading(true);
@@ -213,9 +211,9 @@ export default function LoginScreen({ onLoginSuccess }) {
 
               {/* Google OAuth Login Action */}
               <TouchableOpacity
-                style={[styles.googleBtn, (!request || loading) && styles.disabledBtn]}
-                onPress={() => promptAsync()}
-                disabled={!request || loading}
+                style={[styles.googleBtn, loading && styles.disabledBtn]}
+                onPress={handleNativeGoogleSignIn}
+                disabled={loading}
               >
                 <Text style={styles.googleBtnText}>🔑 Sign in with Google</Text>
               </TouchableOpacity>
