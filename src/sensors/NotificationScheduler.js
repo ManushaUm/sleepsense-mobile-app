@@ -84,6 +84,7 @@ export async function scheduleBedtimeAlerts(prediction, calendarEvents = []) {
           priority: Notifications.AndroidNotificationPriority.HIGH,
         },
         trigger: {
+          type: 'date',
           date: windDownDate,
         },
       });
@@ -112,6 +113,7 @@ export async function scheduleBedtimeAlerts(prediction, calendarEvents = []) {
             priority: Notifications.AndroidNotificationPriority.HIGH,
           },
           trigger: {
+            type: 'date',
             date: stressAlertTime,
           },
         });
@@ -137,6 +139,7 @@ export async function scheduleBedtimeAlerts(prediction, calendarEvents = []) {
             priority: Notifications.AndroidNotificationPriority.HIGH,
           },
           trigger: {
+            type: 'date',
             date: debtAlertTime,
           },
         });

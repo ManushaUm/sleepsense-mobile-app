@@ -1,5 +1,12 @@
 import axios from 'axios';
-import { getGoogleAccessToken } from '../database/storage';
+import { GoogleSignin } from '@react-native-google-signin/google-signin';
+
+// Configure Google Sign-in config dynamically
+GoogleSignin.configure({
+  webClientId: '656306996421-8q1shbdao820ekjnhuodjuesmesl4fce.apps.googleusercontent.com',
+  offlineAccess: true,
+  scopes: ['https://www.googleapis.com/auth/calendar.events.readonly'],
+});
 
 /**
  * Queries tomorrow's events from the user's primary Google Calendar.
@@ -7,9 +14,16 @@ import { getGoogleAccessToken } from '../database/storage';
  */
 export async function getTomorrowCalendarEvents() {
   try {
-    const token = await getGoogleAccessToken();
+    const isSignedIn = await GoogleSignin.isSignedIn();
+    if (!isSignedIn) {
+      console.log('User is not signed in to Google. Bypassing calendar fetch.');
+      return [];
+    }
+
+    const tokens = await GoogleSignin.getTokens();
+    const token = tokens.accessToken;
     if (!token) {
-      console.log('No Google OAuth access token found in SecureStore. Bypassing calendar fetch.');
+      console.log('No Google OAuth access token found. Bypassing calendar fetch.');
       return [];
     }
 
