@@ -122,15 +122,6 @@ export default function ProfileScreen({ userId, onLogout }) {
           </View>
         )}
 
-        {/* Server Config Card */}
-        <View style={styles.card}>
-          <Text style={styles.cardHeader}>Network Connection</Text>
-          <View style={styles.row}>
-            <Text style={styles.label}>Connected IP:</Text>
-            <Text style={styles.urlValue} numberOfLines={1}>{serverUrl}</Text>
-          </View>
-        </View>
-
         {/* App Info Card */}
         <View style={styles.card}>
           <Text style={styles.cardHeader}>About SleepSense</Text>

@@ -14,6 +14,11 @@ GoogleSignin.configure({
  */
 export async function getTomorrowCalendarEvents() {
   try {
+    if (!GoogleSignin || typeof GoogleSignin.isSignedIn !== 'function') {
+      console.log('[CalendarManager] GoogleSignin native module is not available (running in Expo Go?). Bypassing calendar fetch.');
+      return [];
+    }
+
     const isSignedIn = await GoogleSignin.isSignedIn();
     if (!isSignedIn) {
       console.log('User is not signed in to Google. Bypassing calendar fetch.');

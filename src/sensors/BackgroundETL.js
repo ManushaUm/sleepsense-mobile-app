@@ -2,6 +2,9 @@ import * as TaskManager from 'expo-task-manager';
 import * as BackgroundFetch from 'expo-background-fetch';
 import client from '../api/client';
 import { getUserId, getTelemetryData } from '../database/storage';
+import { getTomorrowCalendarEvents } from './CalendarManager';
+import { getDailyScreenTimeMinutes } from './ScreenTimeManager';
+import { getWalkingMinutesToday } from './ActivityManager';
 
 const BACKGROUND_SYNC_TASK = 'BACKGROUND_SLEEPSENSE_SYNC_TASK';
 
@@ -23,6 +26,10 @@ TaskManager.defineTask(BACKGROUND_SYNC_TASK, async () => {
     console.log(`[BackgroundETL] Executing background sync for user ${userId} on date ${dateStr}...`);
 
     const telemetry = await getTelemetryData();
+    const walkingMinutes = await getWalkingMinutesToday();
+    const screenStats = await getDailyScreenTimeMinutes();
+    const calendarEvents = await getTomorrowCalendarEvents();
+
     const totalUnlocks = telemetry.unlock_count_daytime + telemetry.unlock_count_evening + telemetry.unlock_count_late_night;
 
     // Compile daily feature payload.
@@ -38,16 +45,16 @@ TaskManager.defineTask(BACKGROUND_SYNC_TASK, async () => {
       screen_sessions_count: parseFloat(totalUnlocks),
       
       stationary_ratio: 0.84,
-      walking_minutes: 30.0,
+      walking_minutes: parseFloat(walkingMinutes),
       running_minutes: 5.0,
       exercise_detected: 0,
       peak_activity_hour: 16.5,
       activity_bout_count: 7.0,
       
-      app_social_min: 40.0,
-      app_entertainment_evening_min: 15.0,
-      app_late_night_min: 5.0,
-      last_active_app_hour: 22.9,
+      app_social_min: parseFloat(screenStats.app_social_min),
+      app_entertainment_evening_min: parseFloat(screenStats.app_entertainment_evening_min),
+      app_late_night_min: parseFloat(screenStats.app_late_night_min),
+      last_active_app_hour: parseFloat(screenStats.last_active_app_hour),
       app_diversity_count: 5.0,
       app_study_sessions: 2.0,
       
@@ -73,6 +80,8 @@ TaskManager.defineTask(BACKGROUND_SYNC_TASK, async () => {
       nlp_caffeine_similarity: 0.05,
       nlp_screen_similarity: 0.05,
       nlp_stress_similarity: 0.05,
+      
+      calendar_events: calendarEvents,
     };
 
     // Upload to database and trigger prediction sync

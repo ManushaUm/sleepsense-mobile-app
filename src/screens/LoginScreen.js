@@ -143,6 +143,10 @@ export default function LoginScreen({ onLoginSuccess }) {
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       style={styles.container}
     >
+      {/* Soft ambient background glows */}
+      <View style={styles.glowTopLeft} />
+      <View style={styles.glowBottomRight} />
+
       <ScrollView contentContainerStyle={styles.scrollContainer} keyboardShouldPersistTaps="handled">
 
         {/* Brand Header */}
@@ -240,6 +244,25 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: COLORS.background,
+    position: 'relative',
+  },
+  glowTopLeft: {
+    position: 'absolute',
+    top: -80,
+    left: -80,
+    width: 250,
+    height: 250,
+    borderRadius: 125,
+    backgroundColor: 'rgba(99, 102, 241, 0.15)',
+  },
+  glowBottomRight: {
+    position: 'absolute',
+    bottom: -80,
+    right: -80,
+    width: 250,
+    height: 250,
+    borderRadius: 125,
+    backgroundColor: 'rgba(236, 72, 153, 0.1)',
   },
   scrollContainer: {
     flexGrow: 1,
@@ -276,15 +299,15 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   card: {
-    backgroundColor: COLORS.card,
-    borderRadius: 16,
+    backgroundColor: 'rgba(22, 26, 43, 0.65)',
+    borderRadius: 24,
     padding: 24,
-    borderWidth: 1,
-    borderColor: COLORS.border,
+    borderWidth: 1.5,
+    borderColor: 'rgba(255, 255, 255, 0.08)',
     shadowColor: COLORS.black,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.4,
+    shadowRadius: 16,
     elevation: 8,
   },
   cardTitle: {
@@ -302,10 +325,10 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
   },
   input: {
-    backgroundColor: COLORS.background,
-    borderColor: COLORS.border,
+    backgroundColor: 'rgba(13, 15, 23, 0.5)',
+    borderColor: 'rgba(255, 255, 255, 0.05)',
     borderWidth: 1,
-    borderRadius: 10,
+    borderRadius: 12,
     color: COLORS.text,
     paddingHorizontal: 16,
     paddingVertical: 12,
@@ -314,14 +337,14 @@ const styles = StyleSheet.create({
   },
   submitBtn: {
     backgroundColor: COLORS.primary,
-    borderRadius: 10,
+    borderRadius: 12,
     paddingVertical: 14,
     alignItems: 'center',
     marginTop: 10,
     shadowColor: COLORS.primary,
-    shadowOffset: { width: 0, height: 2 },
+    shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.4,
-    shadowRadius: 5,
+    shadowRadius: 8,
     elevation: 4,
   },
   submitBtnText: {

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect } from "react";
 import {
   StyleSheet,
   View,
@@ -10,32 +10,38 @@ import {
   StatusBar,
   Image,
   RefreshControl,
-} from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import client from '../api/client';
-import Gauge from '../components/Gauge';
-import { COLORS } from '../theme/colors';
-import { getLastLoggedDiaryDate, getProfilePictureUrl, getTelemetryData } from '../database/storage';
-import { getTomorrowCalendarEvents } from '../sensors/CalendarManager';
-import { getDailyScreenTimeMinutes } from '../sensors/ScreenTimeManager';
-import { getWalkingMinutesToday } from '../sensors/ActivityManager';
-import { scheduleBedtimeAlerts } from '../sensors/NotificationScheduler';
+} from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
+import client from "../api/client";
+import Gauge from "../components/Gauge";
+import { COLORS } from "../theme/colors";
+import {
+  getLastLoggedDiaryDate,
+  getProfilePictureUrl,
+  getTelemetryData,
+} from "../database/storage";
+import { getTomorrowCalendarEvents } from "../sensors/CalendarManager";
+import { getDailyScreenTimeMinutes } from "../sensors/ScreenTimeManager";
+import { getWalkingMinutesToday } from "../sensors/ActivityManager";
+import { scheduleBedtimeAlerts } from "../sensors/NotificationScheduler";
+import HistoryChart from "../components/HistoryChart";
 
 export default function HomeScreen({ userId, navigation }) {
   const [loading, setLoading] = useState(false);
   const [prediction, setPrediction] = useState(null);
+  const [history, setHistory] = useState([]);
   const [diaryLogged, setDiaryLogged] = useState(false);
   const [profilePic, setProfilePic] = useState(null);
   const [localUnlocks, setLocalUnlocks] = useState(0);
-  
+
   // Format today's date as YYYY-MM-DD
   const [dateStr, setDateStr] = useState(() => {
     const today = new Date();
-    // Default to a date in the raw dataset if testing simulated data, 
+    // Default to a date in the raw dataset if testing simulated data,
     // or standard YYYY-MM-DD
     const yyyy = today.getFullYear();
-    const mm = String(today.getMonth() + 1).padStart(2, '0');
-    const dd = String(today.getDate()).padStart(2, '0');
+    const mm = String(today.getMonth() + 1).padStart(2, "0");
+    const dd = String(today.getDate()).padStart(2, "0");
     return `${yyyy}-${mm}-${dd}`;
   });
 
@@ -44,15 +50,17 @@ export default function HomeScreen({ userId, navigation }) {
   const fetchLatestPrediction = async () => {
     setLoading(true);
     try {
-      // Fetch user's latest prediction history item
-      const response = await client.get(`/history/${userId}?limit=1`);
+      // Fetch user's history (limit 7)
+      const response = await client.get(`/history/${userId}?limit=7`);
       if (response.data && response.data.length > 0) {
+        setHistory(response.data);
         setPrediction(response.data[0]);
       } else {
+        setHistory([]);
         setPrediction(null);
       }
     } catch (error) {
-      console.error('Error fetching prediction history:', error);
+      console.error("Error fetching prediction history:", error);
     } finally {
       setLoading(false);
     }
@@ -66,8 +74,14 @@ export default function HomeScreen({ userId, navigation }) {
       const walkingMinutes = await getWalkingMinutesToday();
       const screenStats = await getDailyScreenTimeMinutes();
       const calendarEvents = await getTomorrowCalendarEvents();
+      //debug: calendar event fetch
+      console.log("===CALANDER EVENTS===");
+      console.log(JSON.stringify(calendarEvents, null, 2));
 
-      const totalUnlocks = telemetry.unlock_count_daytime + telemetry.unlock_count_evening + telemetry.unlock_count_late_night;
+      const totalUnlocks =
+        telemetry.unlock_count_daytime +
+        telemetry.unlock_count_evening +
+        telemetry.unlock_count_late_night;
       setLocalUnlocks(totalUnlocks);
 
       // 2. Prepare payload of active sensors (matches schemas.DailyFeaturesInput)
@@ -82,38 +96,54 @@ export default function HomeScreen({ userId, navigation }) {
         walking_minutes: parseFloat(walkingMinutes),
 
         app_social_min: parseFloat(screenStats.app_social_min),
-        app_entertainment_evening_min: parseFloat(screenStats.app_entertainment_evening_min),
+        app_entertainment_evening_min: parseFloat(
+          screenStats.app_entertainment_evening_min,
+        ),
         app_late_night_min: parseFloat(screenStats.app_late_night_min),
         last_active_app_hour: parseFloat(screenStats.last_active_app_hour),
 
-        calendar_events: calendarEvents
+        calendar_events: calendarEvents,
       };
 
       // 3. Post to predict endpoint (updates features & recalculates predictions)
-      const response = await client.post(`/predict/${userId}?date=${dateStr}`, payload);
+      const response = await client.post(
+        `/predict/${userId}?date=${dateStr}`,
+        payload,
+      );
       setPrediction(response.data);
+
+      // Fetch history to update the line chart
+      await fetchLatestPrediction();
 
       // 4. Schedule local wind-down/exam/sleep debt notifications
       if (response.data) {
         await scheduleBedtimeAlerts(response.data, calendarEvents);
       }
 
-      const percentageScore = Math.round((response.data.predicted_score / 3.0) * 100);
-      let friendlyLabel = 'No Sleep Data 💤';
+      const percentageScore = Math.round(
+        (response.data.predicted_score / 3.0) * 100,
+      );
+      let friendlyLabel = "No Sleep Data 💤";
       const clean = String(response.data.predicted_label).toLowerCase();
-      if (clean.includes('very good')) friendlyLabel = 'Excellent Sleep Expected 🌟';
-      else if (clean.includes('fairly good')) friendlyLabel = 'Good Rest Expected 👍';
-      else if (clean.includes('fairly bad')) friendlyLabel = 'Restless Sleep Expected ⚠️';
-      else if (clean.includes('very bad')) friendlyLabel = 'Poor Sleep Expected 😴';
+      if (clean.includes("very good"))
+        friendlyLabel = "Excellent Sleep Expected 🌟";
+      else if (clean.includes("fairly good"))
+        friendlyLabel = "Good Rest Expected 👍";
+      else if (clean.includes("fairly bad"))
+        friendlyLabel = "Restless Sleep Expected ⚠️";
+      else if (clean.includes("very bad"))
+        friendlyLabel = "Poor Sleep Expected 😴";
 
       Alert.alert(
-        'Sleep Prediction Updated',
-        `Based on today's lifestyle habits, your sleep quality score is estimated at ${percentageScore}%.\n\nExpected tonight: ${friendlyLabel}`
+        "Sleep Prediction Updated",
+        `Based on today's lifestyle habits, your sleep quality score is estimated at ${percentageScore}%.\n\nExpected tonight: ${friendlyLabel}`,
       );
     } catch (error) {
-      console.error('Error refreshing sleep predictions:', error);
-      const detail = error.response?.data?.detail || 'Failed to update sleep predictions. Ensure the backend is running.';
-      Alert.alert('Sync Prediction Error', detail);
+      console.error("Error refreshing sleep predictions:", error);
+      const detail =
+        error.response?.data?.detail ||
+        "Failed to update sleep predictions. Ensure the backend is running.";
+      Alert.alert("Sync Prediction Error", detail);
     } finally {
       setRefreshing(false);
     }
@@ -127,7 +157,7 @@ export default function HomeScreen({ userId, navigation }) {
       const lastLoggedDate = await getLastLoggedDiaryDate();
       setDiaryLogged(lastLoggedDate === dateStr);
     }
-    
+
     // Check if user has a profile picture
     async function checkProfilePic() {
       const picUrl = await getProfilePictureUrl();
@@ -136,7 +166,11 @@ export default function HomeScreen({ userId, navigation }) {
 
     async function loadTelemetry() {
       const telemetry = await getTelemetryData();
-      setLocalUnlocks(telemetry.unlock_count_daytime + telemetry.unlock_count_evening + telemetry.unlock_count_late_night);
+      setLocalUnlocks(
+        telemetry.unlock_count_daytime +
+          telemetry.unlock_count_evening +
+          telemetry.unlock_count_late_night,
+      );
     }
 
     checkDiaryStatus();
@@ -171,7 +205,9 @@ export default function HomeScreen({ userId, navigation }) {
               </View>
             )}
             <View>
-              <Text style={styles.welcomeText}>Hello, {userId.split('@')[0]}</Text>
+              <Text style={styles.welcomeText}>
+                Hello, {userId.split("@")[0]}
+              </Text>
               <Text style={styles.dateText}>Date: {dateStr}</Text>
             </View>
           </View>
@@ -180,27 +216,33 @@ export default function HomeScreen({ userId, navigation }) {
         {loading && !prediction ? (
           <View style={styles.loaderContainer}>
             <ActivityIndicator size="large" color={COLORS.primary} />
-            <Text style={styles.loaderText}>Loading SleepSense Insights...</Text>
+            <Text style={styles.loaderText}>
+              Loading SleepSense Insights...
+            </Text>
           </View>
         ) : (
           <>
             {/* Quick-Log Reminder Banner Widget */}
-            <TouchableOpacity 
+            <TouchableOpacity
               style={[
-                styles.reminderWidget, 
-                diaryLogged ? styles.reminderLogged : styles.reminderIncomplete
+                styles.reminderWidget,
+                diaryLogged ? styles.reminderLogged : styles.reminderIncomplete,
               ]}
-              onPress={() => !diaryLogged && navigation.navigate('Diary')}
+              onPress={() => !diaryLogged && navigation.navigate("Diary")}
               disabled={diaryLogged}
             >
-              <Text style={styles.reminderEmoji}>{diaryLogged ? '✅' : '📝'}</Text>
+              <Text style={styles.reminderEmoji}>
+                {diaryLogged ? "✅" : "📝"}
+              </Text>
               <View style={styles.reminderTextWrapper}>
                 <Text style={styles.reminderTitle}>
-                  {diaryLogged ? "Today's diary is logged!" : "Log Today's Sleep Diary"}
+                  {diaryLogged
+                    ? "Today's diary is logged!"
+                    : "Log Today's Sleep Diary"}
                 </Text>
                 <Text style={styles.reminderSub}>
-                  {diaryLogged 
-                    ? "Habits logged successfully. Check your customized coaching tips below!" 
+                  {diaryLogged
+                    ? "Habits logged successfully. Check your customized coaching tips below!"
                     : "Tap here to record today's mood, stress, and journal notes."}
                 </Text>
               </View>
@@ -210,7 +252,9 @@ export default function HomeScreen({ userId, navigation }) {
             {prediction?.anomaly_flag === 1 && (
               <View style={styles.anomalyBanner}>
                 <Text style={styles.anomalyBannerText}>
-                  ⚠️ Unusual Daily Routine! Today's habits differed significantly from your usual schedule. Your sleep quality predictions have been adjusted.
+                  ⚠️ Unusual Daily Routine! Today's habits differed
+                  significantly from your usual schedule. Your sleep quality
+                  predictions have been adjusted.
                 </Text>
               </View>
             )}
@@ -221,13 +265,16 @@ export default function HomeScreen({ userId, navigation }) {
               <View style={styles.gaugeWrapper}>
                 <Gauge
                   score={prediction?.predicted_score || 0}
-                  label={prediction?.predicted_label || 'No Data'}
+                  label={prediction?.predicted_label || "No Data"}
                 />
               </View>
               <Text style={styles.predictionMeta}>
-                Your sleep quality estimate is based on your daily activity levels and phone usage habits.
+                Your sleep quality estimate is based on your daily activity
+                levels and phone usage habits.
               </Text>
             </View>
+
+            <HistoryChart history={history} />
 
             {/* Habits / Telemetry Cards Grid */}
             <Text style={styles.sectionTitle}>Daytime Activity Summary</Text>
@@ -235,7 +282,9 @@ export default function HomeScreen({ userId, navigation }) {
               <View style={styles.gridCard}>
                 <Text style={styles.gridEmoji}>📱</Text>
                 <Text style={styles.gridVal}>
-                  {prediction?.top_features?.find(f => f.feature.includes('unlock'))?.feature_value?.toFixed(0) || localUnlocks}
+                  {prediction?.top_features
+                    ?.find((f) => f.feature.includes("unlock"))
+                    ?.feature_value?.toFixed(0) || localUnlocks}
                 </Text>
                 <Text style={styles.gridLabel}>Phone Unlocks</Text>
               </View>
@@ -243,7 +292,14 @@ export default function HomeScreen({ userId, navigation }) {
               <View style={styles.gridCard}>
                 <Text style={styles.gridEmoji}>🚶</Text>
                 <Text style={styles.gridVal}>
-                  {prediction?.top_features?.find(f => f.feature.includes('walk') || f.feature.includes('activity'))?.feature_value?.toFixed(0) || '45'}m
+                  {prediction?.top_features
+                    ?.find(
+                      (f) =>
+                        f.feature.includes("walk") ||
+                        f.feature.includes("activity"),
+                    )
+                    ?.feature_value?.toFixed(0) || "45"}
+                  m
                 </Text>
                 <Text style={styles.gridLabel}>Walking Time</Text>
               </View>
@@ -251,15 +307,30 @@ export default function HomeScreen({ userId, navigation }) {
               <View style={styles.gridCard}>
                 <Text style={styles.gridEmoji}>🔇</Text>
                 <Text style={styles.gridVal}>
-                  {((prediction?.top_features?.find(f => f.feature.includes('silence'))?.feature_value || 0.85) * 100).toFixed(0)}%
+                  {(
+                    (prediction?.top_features?.find((f) =>
+                      f.feature.includes("silence"),
+                    )?.feature_value || 0.85) * 100
+                  ).toFixed(0)}
+                  %
                 </Text>
                 <Text style={styles.gridLabel}>Quiet Environment</Text>
               </View>
 
               <View style={styles.gridCard}>
                 <Text style={styles.gridEmoji}>📊</Text>
-                <Text style={[styles.gridVal, { color: prediction?.anomaly_flag === 1 ? COLORS.anomaly : COLORS.good }]}>
-                  {prediction?.anomaly_flag === 1 ? 'Unusual' : 'Normal'}
+                <Text
+                  style={[
+                    styles.gridVal,
+                    {
+                      color:
+                        prediction?.anomaly_flag === 1
+                          ? COLORS.anomaly
+                          : COLORS.good,
+                    },
+                  ]}
+                >
+                  {prediction?.anomaly_flag === 1 ? "Unusual" : "Normal"}
                 </Text>
                 <Text style={styles.gridLabel}>Daily Routine</Text>
               </View>
@@ -269,15 +340,17 @@ export default function HomeScreen({ userId, navigation }) {
 
             {/* Advice summary preview */}
             {prediction?.advice && prediction.advice.length > 0 && (
-              <TouchableOpacity 
-                style={styles.advicePreviewCard} 
-                onPress={() => navigation.navigate('Advice')}
+              <TouchableOpacity
+                style={styles.advicePreviewCard}
+                onPress={() => navigation.navigate("Advice")}
               >
                 <Text style={styles.adviceHeader}>💡 Coach Sleep Advice</Text>
                 <Text style={styles.adviceText} numberOfLines={2}>
                   "{prediction.advice[0]}"
                 </Text>
-                <Text style={styles.adviceLink}>View all coach recommendations →</Text>
+                <Text style={styles.adviceLink}>
+                  View all coach recommendations →
+                </Text>
               </TouchableOpacity>
             )}
           </>
@@ -297,14 +370,14 @@ const styles = StyleSheet.create({
     paddingBottom: 40,
   },
   header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
     marginBottom: 20,
   },
   welcomeText: {
     fontSize: 24,
-    fontWeight: 'bold',
+    fontWeight: "bold",
     color: COLORS.text,
   },
   dateText: {
@@ -322,12 +395,12 @@ const styles = StyleSheet.create({
   },
   syncBtnText: {
     color: COLORS.primaryLight,
-    fontWeight: '600',
+    fontWeight: "600",
     fontSize: 12,
   },
   loaderContainer: {
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: "center",
+    justifyContent: "center",
     marginTop: 80,
   },
   loaderText: {
@@ -336,7 +409,7 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
   anomalyBanner: {
-    backgroundColor: 'rgba(236, 72, 153, 0.15)',
+    backgroundColor: "rgba(236, 72, 153, 0.15)",
     borderWidth: 1,
     borderColor: COLORS.anomaly,
     borderRadius: 12,
@@ -345,7 +418,7 @@ const styles = StyleSheet.create({
   },
   anomalyBannerText: {
     color: COLORS.anomaly,
-    fontWeight: '600',
+    fontWeight: "600",
     fontSize: 13,
     lineHeight: 18,
   },
@@ -355,15 +428,15 @@ const styles = StyleSheet.create({
     padding: 24,
     borderWidth: 1,
     borderColor: COLORS.border,
-    alignItems: 'center',
+    alignItems: "center",
     marginBottom: 24,
   },
   cardHeader: {
     fontSize: 16,
-    fontWeight: 'bold',
+    fontWeight: "bold",
     color: COLORS.text,
     marginBottom: 20,
-    textTransform: 'uppercase',
+    textTransform: "uppercase",
     letterSpacing: 1.0,
   },
   gaugeWrapper: {
@@ -372,30 +445,30 @@ const styles = StyleSheet.create({
   predictionMeta: {
     fontSize: 12,
     color: COLORS.textSecondary,
-    textAlign: 'center',
+    textAlign: "center",
     marginTop: 20,
     lineHeight: 16,
   },
   sectionTitle: {
     fontSize: 18,
-    fontWeight: 'bold',
+    fontWeight: "bold",
     color: COLORS.text,
     marginBottom: 16,
   },
   grid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'space-between',
+    flexDirection: "row",
+    flexWrap: "wrap",
+    justifyContent: "space-between",
     marginBottom: 20,
   },
   gridCard: {
     backgroundColor: COLORS.card,
     borderRadius: 12,
     padding: 16,
-    width: '48%',
+    width: "48%",
     borderWidth: 1,
     borderColor: COLORS.border,
-    alignItems: 'center',
+    alignItems: "center",
     marginBottom: 16,
   },
   gridEmoji: {
@@ -404,26 +477,26 @@ const styles = StyleSheet.create({
   },
   gridVal: {
     fontSize: 18,
-    fontWeight: 'bold',
+    fontWeight: "bold",
     color: COLORS.text,
     marginBottom: 4,
   },
   gridLabel: {
     fontSize: 11,
     color: COLORS.textSecondary,
-    fontWeight: '500',
+    fontWeight: "500",
   },
   predictBtn: {
     backgroundColor: COLORS.primary,
     borderRadius: 10,
     paddingVertical: 14,
-    alignItems: 'center',
+    alignItems: "center",
     marginBottom: 24,
   },
   predictBtnText: {
     color: COLORS.white,
     fontSize: 16,
-    fontWeight: 'bold',
+    fontWeight: "bold",
   },
   advicePreviewCard: {
     backgroundColor: COLORS.card,
@@ -434,7 +507,7 @@ const styles = StyleSheet.create({
   },
   adviceHeader: {
     fontSize: 15,
-    fontWeight: 'bold',
+    fontWeight: "bold",
     color: COLORS.primaryLight,
     marginBottom: 8,
   },
@@ -442,29 +515,29 @@ const styles = StyleSheet.create({
     color: COLORS.text,
     fontSize: 14,
     lineHeight: 20,
-    fontStyle: 'italic',
+    fontStyle: "italic",
     marginBottom: 12,
   },
   adviceLink: {
     color: COLORS.primaryLight,
     fontSize: 12,
-    fontWeight: '600',
+    fontWeight: "600",
   },
   reminderWidget: {
-    flexDirection: 'row',
+    flexDirection: "row",
     padding: 16,
     borderRadius: 12,
     marginBottom: 20,
     borderWidth: 1,
-    alignItems: 'center',
+    alignItems: "center",
   },
   reminderLogged: {
-    backgroundColor: 'rgba(16, 185, 129, 0.08)',
-    borderColor: 'rgba(16, 185, 129, 0.2)',
+    backgroundColor: "rgba(16, 185, 129, 0.08)",
+    borderColor: "rgba(16, 185, 129, 0.2)",
   },
   reminderIncomplete: {
-    backgroundColor: 'rgba(99, 102, 241, 0.08)',
-    borderColor: 'rgba(99, 102, 241, 0.2)',
+    backgroundColor: "rgba(99, 102, 241, 0.08)",
+    borderColor: "rgba(99, 102, 241, 0.2)",
   },
   reminderEmoji: {
     fontSize: 24,
@@ -475,7 +548,7 @@ const styles = StyleSheet.create({
   },
   reminderTitle: {
     fontSize: 15,
-    fontWeight: 'bold',
+    fontWeight: "bold",
     color: COLORS.text,
   },
   reminderSub: {
@@ -485,8 +558,8 @@ const styles = StyleSheet.create({
     lineHeight: 16,
   },
   welcomeRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
   },
   avatarImage: {
     width: 48,
@@ -501,8 +574,8 @@ const styles = StyleSheet.create({
     height: 48,
     borderRadius: 24,
     backgroundColor: COLORS.primary,
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: "center",
+    justifyContent: "center",
     marginRight: 12,
     borderWidth: 2,
     borderColor: COLORS.primaryLight,
@@ -510,6 +583,6 @@ const styles = StyleSheet.create({
   avatarFallbackText: {
     color: COLORS.white,
     fontSize: 20,
-    fontWeight: 'bold',
+    fontWeight: "bold",
   },
 });
